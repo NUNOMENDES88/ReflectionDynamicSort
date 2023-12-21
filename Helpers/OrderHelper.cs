@@ -2,6 +2,7 @@
 {
     using Enumerations;
     using Models;
+    using ReflectionDynamicSort.Extensions;
     using System;
     using System.Collections.Generic;
     using System.Linq;
@@ -14,31 +15,37 @@
         private static readonly string CommandOrderThenByAsc = "ThenBy";
         private static readonly string CommandOrderThenByDsc = "ThenByDescending";
 
-        public static IEnumerable<T> Order<T>(
+        public static IQueryable<T> Order<T>(
             this IQueryable<T> source,
             List<OrderModel> sorterList)
         {
-            if (sorterList.Count == 0)
-                return source.ToList();
+            if (!sorterList.CheckNotNullAndAny())
+                return source;
 
-            ParameterExpression parameter = Expression.Parameter(typeof(T), "t");
-
-            MethodCallExpression resultExpression = GetExpression<T>(parameter, sorterList[0], source.Expression, true);
-            if (sorterList.Count > 1)
+            try
             {
-                for (int i = 1; i < sorterList.Count; i++)
+                ParameterExpression parameter = Expression.Parameter(typeof(T), "t");
+                MethodCallExpression resultExpression = GetExpression<T>(parameter, sorterList[0], source.Expression, true);
+                if (sorterList.Count > 1)
                 {
-                    resultExpression = GetExpression<T>(parameter, sorterList[i], resultExpression, false);
+                    for (int i = 1; i < sorterList.Count; i++)
+                    {
+                        resultExpression = GetExpression<T>(parameter, sorterList[i], resultExpression, false);
+                    }
                 }
+                return source.Provider.CreateQuery<T>(resultExpression);
             }
-            return source.Provider.CreateQuery<T>(resultExpression);
+            catch (Exception)
+            {
+                throw new Exception("Error Invalid Sort Field");
+            }
         }
 
 
         public static MethodCallExpression GetExpression<T>(
-            ParameterExpression parameterExpression, 
-            OrderModel orderModel, 
-            Expression expressionSource, 
+            ParameterExpression parameterExpression,
+            OrderModel orderModel,
+            Expression expressionSource,
             bool first)
         {
             string command = "";
@@ -50,6 +57,7 @@
             {
                 command = orderModel.OrderType == OrderTypeEnum.Ascending ? CommandOrderThenByAsc : CommandOrderThenByDsc;
             }
+
             MemberExpression property = Expression.PropertyOrField(parameterExpression, orderModel.PropertyName);
             Expression orderByExpression = Expression.Lambda(property, parameterExpression);
             return Expression.Call(
@@ -57,6 +65,8 @@
                 new Type[] { typeof(T), property.Type },
                 expressionSource,
                 Expression.Quote(orderByExpression));
+
+
         }
     }
 }
